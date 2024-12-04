@@ -1,56 +1,122 @@
-<template>
-  <ion-page>
-    <ion-header :translucent="true">
-      <ion-toolbar>
-        <ion-title>Blank</ion-title>
-      </ion-toolbar>
-    </ion-header>
+  <template>
+    <ion-page>
+  <ion-header>
+    <ion-toolbar>
+      <ion-title>Recipes</ion-title>
+    </ion-toolbar>
+  </ion-header>
 
-    <ion-content :fullscreen="true">
-      <ion-header collapse="condense">
-        <ion-toolbar>
-          <ion-title size="large">Blank</ion-title>
-        </ion-toolbar>
-      </ion-header>
+  <ion-content>
+    <ion-refresher slot="fixed" @ionRefresh="handleRefresh">
+      <ion-refresher-content></ion-refresher-content>
+    </ion-refresher>
 
-      <div id="container">
-        <strong>Ready to create an app?</strong>
-        <p>Start with Ionic <a target="_blank" rel="noopener noreferrer" href="https://ionicframework.com/docs/components">UI Components</a></p>
-      </div>
-    </ion-content>
-  </ion-page>
-</template>
+    <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+      <ion-fab-button @click="openAddModal">
+        <ion-icon :icon="add"></ion-icon>
+      </ion-fab-button>
+    </ion-fab>
 
-<script setup lang="ts">
-import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/vue';
-</script>
+    <InputModal 
+      v-model:isOpen="isOpen" 
+      v-model:editingId="editingId" 
+      :recipe="recipe" 
+      @submit="handleSubmit" 
+    />
 
-<style scoped>
-#container {
-  text-align: center;
-  
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-}
+    <ion-list>
+      <ion-item-sliding v-for="recipe in recipes" :key="recipe.id">
+        <ion-item>
+          <ion-label>
+            <h2>{{ recipe.name }}</h2>
+            <!-- Memisahkan langkah-langkah ke dalam paragraf yang berbeda -->
+            <p v-for="(step, index) in recipe.steps.split('\n')" :key="index">{{ step }}</p>
+          </ion-label>
+        </ion-item>
 
-#container strong {
-  font-size: 20px;
-  line-height: 26px;
-}
+        <ion-item-options side="start">
+          <ion-item-option color="danger" @click="handleDelete(recipe)">
+            <ion-icon :icon="trash"></ion-icon>
+          </ion-item-option>
+        </ion-item-options>
 
-#container p {
-  font-size: 16px;
-  line-height: 22px;
-  
-  color: #8c8c8c;
-  
-  margin: 0;
-}
+        <ion-item-options side="end">
+          <ion-item-option @click="handleEdit(recipe)">
+            <ion-icon :icon="create"></ion-icon>
+          </ion-item-option>
+        </ion-item-options>
+      </ion-item-sliding>
+    </ion-list>
+  </ion-content>
+</ion-page>
+  </template>
 
-#container a {
-  text-decoration: none;
-}
-</style>
+  <script setup lang="ts">
+  import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonRefresher, IonRefresherContent, IonFab, IonFabButton, IonIcon, IonList, IonItem, IonItemSliding, IonItemOption, IonItemOptions, IonLabel } from '@ionic/vue';
+  import { add, create, trash } from 'ionicons/icons';
+  import InputModal from '@/components/InputModal.vue';
+  import { onMounted, ref } from 'vue';
+  import { firestoreService, type Recipe } from '@/utils/firestore';
+  import { Timestamp } from 'firebase/firestore';
+
+
+  const isOpen = ref(false);
+  const editingId = ref<string | null>(null);
+  const recipe = ref<Omit<Recipe, 'id' | 'createdAt' | 'updatedAt'>>({ name: '', steps: '' });
+  const recipes = ref<Recipe[]>([]);
+
+  const loadRecipes = async () => {
+    recipes.value = await firestoreService.getRecipes();
+  };
+
+  onMounted(() => {
+    loadRecipes();
+  });
+
+  const handleRefresh = async (event: any) => {
+    await loadRecipes();
+    event.target.complete();
+  };
+
+  const handleSubmit = async (recipeData: Omit<Recipe, 'id' | 'createdAt' | 'updatedAt'>) => {
+    // Menambahkan createdAt dan updatedAt
+    const recipeWithTimestamps = {
+      ...recipeData,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+
+    if (editingId.value && typeof editingId.value === 'string') {
+      await firestoreService.updateRecipe(editingId.value, recipeWithTimestamps);
+    } else {
+      await firestoreService.addRecipe(recipeWithTimestamps); // pastikan data yang dikirimkan sudah sesuai
+    }
+
+    loadRecipes();
+    isOpen.value = false;
+  };
+
+
+
+  const handleEdit = (recipe: Recipe) => {
+    editingId.value = recipe.id || null; // Pastikan null jika id tidak ada
+    recipe.name = recipe.name;
+    recipe.steps = recipe.steps;
+    isOpen.value = true;
+  };
+
+
+  const handleDelete = async (recipe: Recipe) => {
+    if (recipe.id) {
+      await firestoreService.deleteRecipe(recipe.id);
+      loadRecipes();
+    }
+  };
+
+  const openAddModal = () => {
+    isOpen.value = true;
+    editingId.value = null;
+    recipe.value.name = '';
+    recipe.value.steps = '';
+  };
+  </script>
